@@ -51,6 +51,107 @@ for class_folder in os.listdir(input_folder):
                 part_image = Image.fromarray(part)
                 part_image.save(os.path.join(class_output_folder, f"{label}_{filename}_part_{idx}.jpg"))
 
+# Características 
+
+import os
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+def extract_features(image):
+    features = []
+    
+    # Convertir la imagen a escala de grises
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # 1. Media de intensidad en la imagen en escala de grises 
+    #La media de intensidad en la imagen en escala de grises proporciona información sobre el brillo 
+    # promedio de la imagen
+    mean_intensity = np.mean(gray_image)
+    features.append(mean_intensity)
+    
+    # 2. Desviación estándar de la intensidad en la imagen en escala de grises.
+    # indica cuánto varía la intensidad de los píxeles en relación con la media.
+    # Si es alta, indica que hay una gran variabilidad en la intensidad de los píxeles, lo que podría significar que 
+    # la imagen tiene regiones muy brillantes junto con regiones muy oscuras. 
+    # Si es baja, indica que la intensidad de los píxeles tiende a ser más uniforme en toda la imagen.
+    std_intensity = np.std(gray_image)
+    features.append(std_intensity)
+    
+    # Calcular el promedio y la desviación estándar de cada componente de color (R, G, B)
+    b, g, r = cv2.split(image)
+    mean_r = np.mean(r)
+    mean_g = np.mean(g)
+    mean_b = np.mean(b)
+    std_r = np.std(r)
+    std_g = np.std(g)
+    std_b = np.std(b)
+    
+    # Agregar los valores al conjunto de características
+    features.extend([mean_r, mean_g, mean_b, std_r, std_g, std_b])
+
+    return features
+
+# Carpeta de entrada
+input_folder = r"C:\Users\User_Asus\Downloads\Incendio_Forestal\nuevos_result"
+
+# Definir las clases
+classes = ['q', 'w', 'e', 'r']
+
+# Inicializar listas para almacenar las características de cada clase
+class_features = {cls: [] for cls in classes}
+
+# Iterar sobre las clases
+for cls in classes:
+    # Obtener la carpeta de la clase actual
+    class_folder = os.path.join(input_folder, cls)
+    
+    # Obtener la lista de archivos en la carpeta de la clase
+    file_list = os.listdir(class_folder)
+    
+    # Iterar sobre los archivos de la clase actual
+    for filename in file_list:
+        # Construir la ruta completa de la imagen
+        image_path = os.path.join(class_folder, filename)
+        
+        # Cargar la imagen
+        image = cv2.imread(image_path)
+        
+        # Extraer características de la imagen
+        image_features = extract_features(image)
+        
+        # Agregar las características a la lista de características de la clase actual
+        class_features[cls].append(image_features)
+
+# Calcular el promedio de las características para cada clase
+class_means = {cls: np.mean(features, axis=0) for cls, features in class_features.items()}
+
+# Seleccionar un número máximo de características a mostrar
+max_features = 8
+
+# Crear gráficos de barras para las características seleccionadas de cada clase
+for cls, mean_features in class_means.items():
+    selected_features = mean_features[:max_features]
+    plt.figure(figsize=(8, 5))
+    plt.bar(range(len(selected_features)), selected_features, color='b')
+    plt.title(f'Average Feature Values for Class "{cls}"')
+    plt.xlabel('Feature Index')
+    plt.ylabel('Average Value')
+    plt.xticks(range(len(selected_features)))
+    plt.text(len(selected_features) - 1, min(selected_features), 'Mean Intensity', ha='right')
+    plt.text(len(selected_features) - 2, min(selected_features), 'Std Intensity', ha='right')
+    plt.text(len(selected_features) - 3, min(selected_features), 'Mean R', ha='right')
+    plt.text(len(selected_features) - 4, min(selected_features), 'Mean G', ha='right')
+    plt.text(len(selected_features) - 5, min(selected_features), 'Mean B', ha='right')
+    plt.text(len(selected_features) - 6, min(selected_features), 'Std R', ha='right')
+    plt.text(len(selected_features) - 7, min(selected_features), 'Std G', ha='right')
+    plt.text(len(selected_features) - 8, min(selected_features), 'Std B', ha='right')
+    plt.show()
+
+
+
+
+
     
 
 
