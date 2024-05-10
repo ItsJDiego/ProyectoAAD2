@@ -78,7 +78,7 @@ def extract_features(image):
     std_intensity = np.std(gray_image)
     features.append(std_intensity)
     
-    # Calcular el promedio y la desviación estándar de cada componente de color (R, G, B)
+    # Calcular el promedio, la desviación estándar y la varianza de cada componente de color (R, G, B)
     b, g, r = cv2.split(image)
     mean_r = np.mean(r)
     mean_g = np.mean(g)
@@ -86,9 +86,12 @@ def extract_features(image):
     std_r = np.std(r)
     std_g = np.std(g)
     std_b = np.std(b)
+    var_r = np.var(r)
+    var_g = np.var(g)
+    var_b = np.var(b)
     
     # Agregar los valores al conjunto de características
-    features.extend([mean_r, mean_g, mean_b, std_r, std_g, std_b])
+    features.extend([mean_r, mean_g, mean_b, std_r, std_g, std_b, var_r, var_g, var_b])
 
     return features
 
@@ -127,25 +130,19 @@ for cls in classes:
 class_means = {cls: np.mean(features, axis=0) for cls, features in class_features.items()}
 
 # Seleccionar un número máximo de características a mostrar
-max_features = 8
+max_features = 11
 
 # Crear gráficos de barras para las características seleccionadas de cada clase
 for cls, mean_features in class_means.items():
     selected_features = mean_features[:max_features]
-    plt.figure(figsize=(8, 5))
+    feature_names = ['Mean Intensity', 'Std Intensity', 'Mean R', 'Mean G', 'Mean B', 'Std R', 'Std G', 'Std B', 'Var R', 'Var G', 'Var B']
+    plt.figure(figsize=(10, 6))
     plt.bar(range(len(selected_features)), selected_features, color='b')
     plt.title(f'Average Feature Values for Class "{cls}"')
     plt.xlabel('Feature Index')
     plt.ylabel('Average Value')
-    plt.xticks(range(len(selected_features)))
-    plt.text(len(selected_features) - 1, min(selected_features), 'Mean Intensity', ha='right')
-    plt.text(len(selected_features) - 2, min(selected_features), 'Std Intensity', ha='right')
-    plt.text(len(selected_features) - 3, min(selected_features), 'Mean R', ha='right')
-    plt.text(len(selected_features) - 4, min(selected_features), 'Mean G', ha='right')
-    plt.text(len(selected_features) - 5, min(selected_features), 'Mean B', ha='right')
-    plt.text(len(selected_features) - 6, min(selected_features), 'Std R', ha='right')
-    plt.text(len(selected_features) - 7, min(selected_features), 'Std G', ha='right')
-    plt.text(len(selected_features) - 8, min(selected_features), 'Std B', ha='right')
+    plt.xticks(range(len(selected_features)), [f'{feature_names[i]}: {selected_features[i]:.2f}' for i in range(len(selected_features))], rotation=45)
+    plt.grid(True)
     plt.show()
 
 
