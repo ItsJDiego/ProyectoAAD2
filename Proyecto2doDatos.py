@@ -51,99 +51,86 @@ for class_folder in os.listdir(input_folder):
                 part_image = Image.fromarray(part)
                 part_image.save(os.path.join(class_output_folder, f"{label}_{filename}_part_{idx}.jpg"))
 
-# Características 
+# Entrenamiento de neuronas, asegurar de descargar el archivo 'tu_archivo_normalizado.csv'
 
-import os
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Input
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 
-def extract_features(image):
-    features = []
-    
-    # Convertir la imagen a escala de grises
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # 1. Media de intensidad en la imagen en escala de grises 
-    #La media de intensidad en la imagen en escala de grises proporciona información sobre el brillo 
-    # promedio de la imagen
-    mean_intensity = np.mean(gray_image)
-    features.append(mean_intensity)
-    
-    # 2. Desviación estándar de la intensidad en la imagen en escala de grises.
-    # indica cuánto varía la intensidad de los píxeles en relación con la media.
-    # Si es alta, indica que hay una gran variabilidad en la intensidad de los píxeles, lo que podría significar que 
-    # la imagen tiene regiones muy brillantes junto con regiones muy oscuras. 
-    # Si es baja, indica que la intensidad de los píxeles tiende a ser más uniforme en toda la imagen.
-    std_intensity = np.std(gray_image)
-    features.append(std_intensity)
-    
-    # Calcular el promedio, la desviación estándar y la varianza de cada componente de color (R, G, B)
-    b, g, r = cv2.split(image)
-    mean_r = np.mean(r)
-    mean_g = np.mean(g)
-    mean_b = np.mean(b)
-    std_r = np.std(r)
-    std_g = np.std(g)
-    std_b = np.std(b)
-    var_r = np.var(r)
-    var_g = np.var(g)
-    var_b = np.var(b)
-    
-    # Agregar los valores al conjunto de características
-    features.extend([mean_r, mean_g, mean_b, std_r, std_g, std_b, var_r, var_g, var_b])
+# Cargar los datos desde el archivo CSV
+data = pd.read_csv("tu_archivo_normalizado.csv")
 
-    return features
+# Dividir los datos en características (X) y etiquetas (y)
+X = data.drop(columns=['Class'])
+y = data['Class']
 
-# Carpeta de entrada
-input_folder = r"C:\Users\User_Asus\Downloads\Incendio_Forestal\nuevos_result"
+# Codificar las etiquetas en un formato adecuado para la red neuronal
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
 
-# Definir las clases
-classes = ['q', 'w', 'e', 'r']
+# Definir los rangos de parámetros
+learning_rates = [0.01, 0.1, 0.5, 1.0]
+momentum_values = [0.1, 0.3, 0.5, 0.7, 0.9]
+neuronas_entrada = 3
+descriptores = 21
+neurons_range = list(range(3, 24))
+epochs_range = [100, 200, 300, 400, 500]
 
-# Inicializar listas para almacenar las características de cada clase
-class_features = {cls: [] for cls in classes}
+# Inicializar variables para el mejor accuracy y los parámetros correspondientes
+best_accuracy = 0.0
+best_parameters = {}
 
-# Iterar sobre las clases
-for cls in classes:
-    # Obtener la carpeta de la clase actual
-    class_folder = os.path.join(input_folder, cls)
-    
-    # Obtener la lista de archivos en la carpeta de la clase
-    file_list = os.listdir(class_folder)
-    
-    # Iterar sobre los archivos de la clase actual
-    for filename in file_list:
-        # Construir la ruta completa de la imagen
-        image_path = os.path.join(class_folder, filename)
-        
-        # Cargar la imagen
-        image = cv2.imread(image_path)
-        
-        # Extraer características de la imagen
-        image_features = extract_features(image)
-        
-        # Agregar las características a la lista de características de la clase actual
-        class_features[cls].append(image_features)
+# Crear una lista para almacenar los resultados
+results = []
 
-# Calcular el promedio de las características para cada clase
-class_means = {cls: np.mean(features, axis=0) for cls, features in class_features.items()}
+# Definir la partición con k=13
+stratified_kfold = StratifiedKFold(n_splits=13, shuffle=True, random_state=42)
 
-# Seleccionar un número máximo de características a mostrar
-max_features = 11
+# Iterar sobre las particiones y entrenar modelos
+for train_index, test_index in stratified_kfold.split(X, y_encoded):
+    X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+    y_train, y_test = y_encoded[train_index], y_encoded[test_index]
 
-# Crear gráficos de barras para las características seleccionadas de cada clase
-for cls, mean_features in class_means.items():
-    selected_features = mean_features[:max_features]
-    feature_names = ['Mean Intensity', 'Std Intensity', 'Mean R', 'Mean G', 'Mean B', 'Std R', 'Std G', 'Std B', 'Var R', 'Var G', 'Var B']
-    plt.figure(figsize=(10, 6))
-    plt.bar(range(len(selected_features)), selected_features, color='b')
-    plt.title(f'Average Feature Values for Class "{cls}"')
-    plt.xlabel('Feature Index')
-    plt.ylabel('Average Value')
-    plt.xticks(range(len(selected_features)), [f'{feature_names[i]}: {selected_features[i]:.2f}' for i in range(len(selected_features))], rotation=45)
-    plt.grid(True)
-    plt.show()
+    for learning_rate in learning_rates:
+        for momentum in momentum_values:
+            for neurons in neurons_range:
+                for epochs in epochs_range:
+                    model = Sequential([
+                        Input(shape=(X_train.shape[1],)),  # Capa de entrada
+                        Dense(neurons, activation='relu'),  # Capa oculta
+                        Dense(3, activation='softmax')  # Capa de salida
+                    ])
+
+                    optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
+                    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+                    model.fit(X_train, tf.keras.utils.to_categorical(y_train, num_classes=3), epochs=epochs, batch_size=16, verbose=0)
+
+                    _, accuracy = model.evaluate(X_test, tf.keras.utils.to_categorical(y_test, num_classes=3), verbose=0)
+
+                    results.append([learning_rate, momentum, 1, neurons, epochs, accuracy])
+
+                    if accuracy > best_accuracy:
+                        best_accuracy = accuracy
+                        best_parameters['learning_rate'] = learning_rate
+                        best_parameters['momentum'] = momentum
+                        best_parameters['neurons'] = neurons
+                        best_parameters['epochs'] = epochs
+
+                    print(f"Learning rate: {learning_rate}, Momentum: {momentum}, Capa: 1, Neurona: {neurons}, Época: {epochs}, Accuracy: {accuracy}")
+
+# Convertir la lista de resultados a un DataFrame de pandas
+results_df = pd.DataFrame(results, columns=['learning_rate', 'momentum', 'layer', 'neurons', 'epochs', 'accuracy'])
+
+# Guardar los resultados en un archivo CSV
+results_df.to_csv('results.csv', index=False)
+
+# Imprimir los mejores parámetros y el mejor accuracy
+print("Mejor Accuracy:", best_accuracy)
+print("Mejores Parámetros:", best_parameters)
 
 
 
