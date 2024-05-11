@@ -55,6 +55,7 @@ for class_folder in os.listdir(input_folder):
 
 import pandas as pd
 import tensorflow as tf
+import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Input
 from sklearn.model_selection import StratifiedKFold
@@ -83,8 +84,9 @@ epochs_range = [100, 200, 300, 400, 500]
 best_accuracy = 0.0
 best_parameters = {}
 
-# Crear una lista para almacenar los resultados
+# Crear listas para almacenar los resultados
 results = []
+accuracy_by_epoch = []
 
 # Definir la partición con k=13
 stratified_kfold = StratifiedKFold(n_splits=13, shuffle=True, random_state=42)
@@ -107,11 +109,11 @@ for train_index, test_index in stratified_kfold.split(X, y_encoded):
                     optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
                     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-                    model.fit(X_train, tf.keras.utils.to_categorical(y_train, num_classes=3), epochs=epochs, batch_size=16, verbose=0)
+                    history = model.fit(X_train, tf.keras.utils.to_categorical(y_train, num_classes=3), epochs=epochs, batch_size=16, verbose=0)
 
                     _, accuracy = model.evaluate(X_test, tf.keras.utils.to_categorical(y_test, num_classes=3), verbose=0)
-
                     results.append([learning_rate, momentum, 1, neurons, epochs, accuracy])
+                    accuracy_by_epoch.append((neurons, epochs, history.history['accuracy'], history.history['loss']))
 
                     if accuracy > best_accuracy:
                         best_accuracy = accuracy
@@ -131,6 +133,34 @@ results_df.to_csv('results.csv', index=False)
 # Imprimir los mejores parámetros y el mejor accuracy
 print("Mejor Accuracy:", best_accuracy)
 print("Mejores Parámetros:", best_parameters)
+
+# Gráfica de número de neuronas por capa oculta
+neurons_counts = [neuron[3] for neuron in results]
+plt.hist(neurons_counts, bins=len(set(neurons_counts)), alpha=0.5)
+plt.xlabel('Número de Neuronas')
+plt.ylabel('Frecuencia')
+plt.title('Número de Neuronas por Capa Oculta')
+plt.show()
+
+# Gráfica de precisión y pérdida por época
+for item in accuracy_by_epoch:
+    neurons, epochs, accuracy, loss = item
+    plt.plot(range(1, epochs + 1), accuracy, label=f'{neurons} Neuronas, {epochs} Épocas')
+plt.xlabel('Época')
+plt.ylabel('Precisión')
+plt.title('Precisión por Época')
+plt.legend()
+plt.show()
+
+plt.figure()
+for item in accuracy_by_epoch:
+    neurons, epochs, accuracy, loss = item
+    plt.plot(range(1, epochs + 1), loss, label=f'{neurons} Neuronas, {epochs} Épocas')
+plt.xlabel('Época')
+plt.ylabel('Pérdida')
+plt.title('Pérdida por Época')
+plt.legend()
+plt.show()
 
 
 
