@@ -51,11 +51,127 @@ for class_folder in os.listdir(input_folder):
                 part_image = Image.fromarray(part)
                 part_image.save(os.path.join(class_output_folder, f"{label}_{filename}_part_{idx}.jpg"))
 
-# Entrenamiento de neuronas, asegurar de descargar el archivo 'tu_archivo_normalizado.csv'
+# ------------------------ Calculo de caracteristicas y pasarlo a csv-------------------------------------
+import os
+import cv2
+import numpy as np
+import csv
+from skimage.feature import greycomatrix, greycoprops
+from skimage import measure
+from scipy.stats import skew, kurtosis
+
+def extract_features(image):
+    features = []
+
+    # Convertir la imagen a escala de grises
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # 1. Media de intensidad en la imagen en escala de grises
+    mean_intensity = np.mean(gray_image)
+    features.append(mean_intensity)
+
+    # 2. Desviación estándar de la intensidad en la imagen en escala de grises.
+    std_intensity = np.std(gray_image)
+    features.append(std_intensity)
+
+    # Calcular el promedio, la desviación estándar y la varianza de cada componente de color (R, G, B)
+    b, g, r = cv2.split(image)
+    features.extend([np.mean(channel) for channel in (r, g, b)])
+    features.extend([np.std(channel) for channel in (r, g, b)])
+    features.extend([np.var(channel) for channel in (r, g, b)])
+
+    # Convertir la imagen a espacio de color HSV
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # 3. Características de color en HSV
+    features.append(np.mean(hsv_image[:, :, 0]))  # Promedio de tono
+    features.append(np.mean(hsv_image[:, :, 1]))  # Promedio de saturación
+    features.append(np.mean(hsv_image[:, :, 2]))  # Promedio de valor
+
+    # 4. Características de textura utilizando la matriz de co-ocurrencia de niveles de gris (GLCM)
+    glcm = greycomatrix(gray_image, [1], [0, np.pi/4, np.pi/2, 3*np.pi/4], 256, symmetric=True, normed=True)
+    features.append(greycoprops(glcm, 'homogeneity').mean())  # Homogeneidad
+    features.append(greycoprops(glcm, 'contrast').mean())     # Contraste
+
+    # 5. Características de forma utilizando regionprops
+    props = measure.regionprops_table(measure.label(gray_image > np.mean(gray_image)), properties=('area', 'perimeter', 'solidity'))
+    features.extend([np.mean(props['area']), np.mean(props['perimeter']), np.mean(props['solidity'])])
+
+    # 6. Características estadísticas: asimetría y curtosis
+    features.append(skew(gray_image, axis=None))     # Asimetría
+    features.append(kurtosis(gray_image, axis=None)) # Curtosis
+
+    return features
+
+# Carpeta de entrada
+input_folder = r"/content/drive/MyDrive/nuevos_result"
+
+# Definir las clases
+classes = ['q', 'w', 'e']
+
+# Crear un archivo CSV para escribir las características
+csv_filename = "image_features5.csv"
+with open(csv_filename, 'w', newline='') as csvfile:
+    csv_writer = csv.writer(csvfile)
+
+    # Escribir el encabezado del CSV
+    header = ["Class", "Mean Intensity", "Std Intensity", "Mean R", "Mean G", "Mean B", "Std R", "Std G", "Std B", "Var R", "Var G", "Var B",
+              "Promedio_tono", "Promedio_saturacion", "Promedio_valor", "Homogeneidad", "Contraste", "Area", "Perimeter", "Solidity",
+              "Asimetría", "Curtosis"]
+    csv_writer.writerow(header)
+
+    # Iterar sobre las clases
+    for cls in classes:
+        # Obtener la carpeta de la clase actual
+        class_folder = os.path.join(input_folder, cls)
+
+        # Obtener la lista de archivos en la carpeta de la clase
+        file_list = os.listdir(class_folder)
+
+        # Iterar sobre los archivos de la clase actual
+        for filename in file_list:
+            # Construir la ruta completa de la imagen
+            image_path = os.path.join(class_folder, filename)
+
+            # Cargar la imagen
+            image = cv2.imread(image_path)
+
+            # Extraer características de la imagen
+            image_features = extract_features(image)
+
+            # Escribir las características en el archivo CSV junto con la clase
+            row = [cls] + image_features
+            csv_writer.writerow(row)
+
+print("CSV generado exitosamente:", csv_filename)
+
+# ------------------------ Realizar la normalización -------------------------------------
+
+import pandas as pd
+
+# Cargar el archivo CSV
+df = pd.read_csv('image_features5.csv')
+
+# Guardar la columna 'class' antes de normalizar
+clases = df['Class']
+
+# Eliminar la columna 'class' temporalmente antes de normalizar
+df = df.drop(columns=['Class'])
+
+# Normalizar utilizando min-max scaling
+df_normalized = (df - df.min()) / (df.max() - df.min())
+
+# Agregar la columna 'class' nuevamente
+df_normalized['Class'] = clases
+
+# Guardar el archivo CSV normalizado
+df_normalized.to_csv('tu_archivo_normalizado.csv', index=False)
+
+
+# --------------------Entrenamiento de neuronas, asegurar de descargar el archivo 'tu_archivo_normalizado.csv'--------------------------
 
 import pandas as pd
 import tensorflow as tf
-import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Input
 from sklearn.model_selection import StratifiedKFold
@@ -80,10 +196,6 @@ descriptores = 21
 neurons_range = list(range(3, 24))
 epochs_range = [100, 200, 300, 400, 500]
 
-# Inicializar variables para el mejor accuracy y los parámetros correspondientes
-best_accuracy = 0.0
-best_parameters = {}
-
 # Crear listas para almacenar los resultados
 results = []
 accuracy_by_epoch = []
@@ -107,32 +219,48 @@ for train_index, test_index in stratified_kfold.split(X, y_encoded):
                     ])
 
                     optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
-                    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+                    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
-                    history = model.fit(X_train, tf.keras.utils.to_categorical(y_train, num_classes=3), epochs=epochs, batch_size=16, verbose=0)
+                    history = model.fit(X_train, y_train, epochs=epochs, batch_size=16, verbose=0)
 
-                    _, accuracy = model.evaluate(X_test, tf.keras.utils.to_categorical(y_test, num_classes=3), verbose=0)
+                    _, accuracy = model.evaluate(X_test, y_test, verbose=0)
                     results.append([learning_rate, momentum, 1, neurons, epochs, accuracy])
                     accuracy_by_epoch.append((neurons, epochs, history.history['accuracy'], history.history['loss']))
 
-                    if accuracy > best_accuracy:
-                        best_accuracy = accuracy
-                        best_parameters['learning_rate'] = learning_rate
-                        best_parameters['momentum'] = momentum
-                        best_parameters['neurons'] = neurons
-                        best_parameters['epochs'] = epochs
-
                     print(f"Learning rate: {learning_rate}, Momentum: {momentum}, Capa: 1, Neurona: {neurons}, Época: {epochs}, Accuracy: {accuracy}")
 
-# Convertir la lista de resultados a un DataFrame de pandas
-results_df = pd.DataFrame(results, columns=['learning_rate', 'momentum', 'layer', 'neurons', 'epochs', 'accuracy'])
+                    # Convertir la lista de resultados a un DataFrame de pandas y guardarlos en un archivo CSV
+                    results_df = pd.DataFrame(results, columns=['learning_rate', 'momentum', 'layer', 'neurons', 'epochs', 'accuracy'])
+                    results_df.to_csv('results.csv', index=False)
 
-# Guardar los resultados en un archivo CSV
-results_df.to_csv('results.csv', index=False)
+# Imprimir los resultados finales
+print("Resultados guardados en 'results.csv'")
 
-# Imprimir los mejores parámetros y el mejor accuracy
-print("Mejor Accuracy:", best_accuracy)
-print("Mejores Parámetros:", best_parameters)
+
+# ------------------------------------------------ Gráficas del punto a, b y c del inciso 6-----------------------------------------
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Cargar los resultados desde el archivo CSV
+results_df = pd.read_csv('results.csv')
+
+# Seleccionar las filas del DataFrame del 23 al 44
+selected_results = results_df.iloc[22:44]
+
+# Gráfico de precisión global en función del Learning Rate y Momentum
+plt.figure(figsize=(10, 6))
+
+# Crear un mapa de calor para visualizar la precisión global
+accuracy_heatmap = selected_results.pivot_table(values='accuracy', index='learning_rate', columns='momentum')
+sns.heatmap(accuracy_heatmap, annot=True, cmap='viridis', fmt=".3f")
+
+plt.title('Precisión Global vs Learning Rate y Momentum')
+plt.xlabel('Momentum')
+plt.ylabel('Learning Rate')
+plt.show()
+
 
 # Gráfica de número de neuronas por capa oculta
 neurons_counts = [neuron[3] for neuron in results]
@@ -142,25 +270,37 @@ plt.ylabel('Frecuencia')
 plt.title('Número de Neuronas por Capa Oculta')
 plt.show()
 
-# Gráfica de precisión y pérdida por época
-for item in accuracy_by_epoch:
+
+# Crear una paleta de colores única para cada neurona
+color_palette = plt.cm.get_cmap('viridis', len(accuracy_by_epoch))
+
+# Gráfica de precisión por época para cada neurona
+plt.figure(figsize=(10, 6))  # Ajustar el tamaño de la figura
+for i, item in enumerate(accuracy_by_epoch):
     neurons, epochs, accuracy, loss = item
-    plt.plot(range(1, epochs + 1), accuracy, label=f'{neurons} Neuronas, {epochs} Épocas')
+    color = color_palette(i)  # Seleccionar un color de la paleta
+    plt.plot(range(1, epochs + 1), accuracy, label=f'{neurons} Neuronas, {epochs} Épocas', color=color)
 plt.xlabel('Época')
 plt.ylabel('Precisión')
 plt.title('Precisión por Época')
 plt.legend()
+plt.tight_layout()
 plt.show()
 
-plt.figure()
-for item in accuracy_by_epoch:
+# Gráfica de pérdida por época para cada neurona
+plt.figure(figsize=(10, 6))  # Ajustar el tamaño de la figura
+for i, item in enumerate(accuracy_by_epoch):
     neurons, epochs, accuracy, loss = item
-    plt.plot(range(1, epochs + 1), loss, label=f'{neurons} Neuronas, {epochs} Épocas')
+    color = color_palette(i)  # Seleccionar un color de la paleta
+    plt.plot(range(1, epochs + 1), loss, label=f'{neurons} Neuronas, {epochs} Épocas', color=color)
 plt.xlabel('Época')
 plt.ylabel('Pérdida')
 plt.title('Pérdida por Época')
 plt.legend()
+plt.tight_layout()
 plt.show()
+
+
 
 
 
